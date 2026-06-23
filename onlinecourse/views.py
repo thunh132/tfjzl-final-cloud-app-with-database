@@ -1,46 +1,50 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from django.http import HttpResponseRedirect
 from django.urls import reverse
 from .models import Course, Lesson, Question, Choice, Submission, Enrollment
 
-# Hàm xử lý khi học viên bấm nút nộp bài (Submit)
 def submit(request, course_id):
     course = get_object_or_404(Course, pk=course_id)
     if request.method == 'POST':
-        # Thu thập tất cả các ID đáp án mà người dùng đã tích chọn
-        selected_choice_ids = []
-        for key, value in request.POST.items():
-            if key.startswith('choice_'):
-                selected_choice_ids.append(int(value))
+        # 1. Lấy danh sách ID các đáp án mà học viên đã tick chọn từ form
+        selected_ids = [int(choice_id) for choice_id in request.POST.getlist('choice')]
         
-        # Tính toán điểm số
+        # 2. Lấy Enrollment của user hiện tại
+        enrollment = Enrollment.objects.filter(user=request.user, course=course).first()
+        
+        # 3. Tạo một bản ghi Submission để lưu lại lượt làm bài
+        submission = Submission.objects.create(enrollment=enrollment)
+        submission.choices.set(selected_ids)
+        submission.save()
+        
+        # 4. Tính toán điểm số
         total_score = 0
-        questions = course.question_set.all()
-        for question in questions:
-            if question.is_get_score(selected_choice_ids):
+        max_score = 0
+        for question in course.question_set.all():
+            max_score += question.grade
+            if question.is_get_score(selected_ids):
                 total_score += question.grade
                 
-        # Lưu kết quả tạm thời vào session để hiển thị ở trang kết quả
-        request.session['total_score'] = total_score
-        return redirect('onlinecourse:show_exam_result', course_id=course.id)
-        
-    return HttpResponseRedirect(reverse('onlinecourse:index'))
+        # Tính phần trăm
+        percentage = (total_score / max_score * 100) if max_score > 0 else 0
+        passed = percentage >= 70
 
-# Hàm hiển thị kết quả thi (Show Exam Result)
+        # 5. Lưu tạm vào session để bên hàm show_exam_result đọc ra hiển thị
+        request.session['total_score'] = total_score
+        request.session['max_score'] = max_score
+        request.session['percentage'] = percentage
+        request.session['passed'] = passed
+
+        return redirect(reverse('onlinecourse:show_exam_result', args=(course.id,)))
+
 def show_exam_result(request, course_id):
     course = get_object_or_404(Course, pk=course_id)
-    total_score = request.session.get('total_score', 0)
     
-    # Giả lập điểm tối đa của bài thi là 10 để tính phần trăm đạt được
-    max_score = sum([q.grade for q in course.question_set.all()]) or 10
-    percentage = (total_score / max_score) * 100
-    
+    # Đọc dữ liệu đã tính toán từ session ra
     context = {
         'course': course,
-        'total_score': total_score,
-        'max_score': max_score,
-        'percentage': percentage,
-        'passed': percentage >= 70
+        'total_score': request.session.get('total_score', 0),
+        'max_score': request.session.get('max_score', 0),
+        'percentage': request.session.get('percentage', 0.0),
+        'passed': request.session.get('passed', False)
     }
-    # Render ra một giao diện kết quả nhỏ để phục vụ việc chụp ảnh Task 7
     return render(request, 'onlinecourse/exam_result.html', context)
