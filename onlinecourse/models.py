@@ -4,7 +4,7 @@ from django.db import models
 from django.conf import settings
 
 # Lớp Model Khóa học (Có sẵn để liên kết)
-class Course(models.models.Model if hasattr(models, 'models') else models.Model):
+class Course(models.Model):
     name = models.CharField(null=False, max_length=30, default='online course')
     image = models.ImageField(upload_to='course_images/')
     description = models.CharField(max_length=1000)
@@ -19,15 +19,11 @@ class Course(models.models.Model if hasattr(models, 'models') else models.Model)
 class Lesson(models.Model):
     title = models.CharField(max_length=200, default="title")
     order = models.IntegerField(default=0)
-    course = models.ForeignKey(Course, on_index=True, on_delete=models.CASCADE)
+    course = models.ForeignKey(Course, on_delete=models.CASCADE)
     content = models.TextField()
 
     def __str__(self):
         return "Title: " + self.title
-
-# ==========================================================
-# CÁC LỚP THỊNH CẦN THÊM CHO TASK 1 (AI SẼ CHẤM ĐIỂM Ở ĐÂY)
-# ==========================================================
 
 # 1. Lớp Model Câu hỏi (Question)
 class Question(models.Model):
@@ -55,12 +51,7 @@ class Choice(models.Model):
     def __str__(self):
         return "Choice: " + self.choice_text
 
-# 3. Lớp Model Nộp bài của học viên (Submission)
-class Submission(models.Model):
-    enrollment = models.ForeignKey('Enrollment', on_delete=models.CASCADE, null=True, blank=True)
-    choices = models.ManyToManyField(Choice)
-
-# Lớp phụ trợ Enrollment để không bị lỗi liên kết
+# Lớp phụ trợ Enrollment để liên kết dữ liệu học viên
 class Enrollment(models.Model):
     AUDIT = 'audit'
     HONOR = 'honor'
@@ -73,3 +64,43 @@ class Enrollment(models.Model):
     date_enrolled = models.DateField(default=timezone.now)
     mode = models.CharField(max_length=5, choices=ROLES, default=AUDIT)
     rating = models.FloatField(default=5.0)
+
+    def __str__(self):
+        return self.user.username + " enrolled in " + self.course.name
+
+# 3. Lớp Model Nộp bài của học viên (Submission) - Bổ sung phương thức __str__
+class Submission(models.Model):
+    enrollment = models.ForeignKey(Enrollment, on_delete=models.CASCADE, null=True, blank=True)
+    choices = models.ManyToManyField(Choice)
+
+    def __str__(self):
+        return f"Submission {self.id} by {self.enrollment.user.username if self.enrollment else 'Unknown'}"
+
+# ==========================================================
+# BỔ SUNG CÁC MODEL THIẾU ĐỂ FIX TRIỆT ĐỂ CHO TASK 2 & 3
+# ==========================================================
+
+# Lớp Model Giảng viên (Instructor)
+class Instructor(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    total_learners = models.IntegerField(default=0)
+
+    def __str__(self):
+        return self.user.username
+
+# Lớp Model Học viên chi tiết (Learner)
+class Learner(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    STUDENT = 'student'
+    DEVELOPER = 'developer'
+    DATA_SCIENTIST = 'data_scientist'
+    OCCUPATION_CHOICES = [
+        (STUDENT, 'Student'),
+        (DEVELOPER, 'Developer'),
+        (DATA_SCIENTIST, 'Data Scientist')
+    ]
+    occupation = models.CharField(max_length=20, choices=OCCUPATION_CHOICES, default=STUDENT)
+    social_link = models.URLField(max_length=200, blank=True)
+
+    def __str__(self):
+        return self.user.username
